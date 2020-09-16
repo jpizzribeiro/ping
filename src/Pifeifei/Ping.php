@@ -357,6 +357,7 @@ class Ping
 
         $fsockopen['pings'][] = $ms;
 
+        sleep(1);
         ++$i;
       }
 
