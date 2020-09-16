@@ -34,6 +34,7 @@ class Ping
     private $timeout;
     private $port = 80;
     private $data = 'Ping';
+    private $count = 3;
     private $commandOutput;
 
     /**
@@ -52,12 +53,29 @@ class Ping
      *     - 255 = unrestricted
      * @param int $timeout   Timeout (in seconds) used for ping and fsockopen().
      */
-    public function __construct($host = "", $ttl = 255, $timeout = 3)
+    public function __construct($host = "", $ttl = 255, $timeout = 3, $count = 3)
     {
         $this->host    = $host;
         $this->ttl     = $ttl;
         $this->timeout = $timeout;
+        $this->count   = $count;
     }
+
+  /**
+   * @return int|mixed
+   */
+  public function getCount()
+  {
+    return $this->count;
+  }
+
+  /**
+   * @param int|mixed $count
+   */
+  public function setCount($count)
+  {
+    $this->count = $count;
+  }
 
     /**
      * Get the ttl.
@@ -237,6 +255,7 @@ class Ping
         $ttl     = escapeshellcmd($this->ttl);
         $timeout = escapeshellcmd($this->timeout);
         $host    = escapeshellcmd($this->host);
+        $count   = escapeshellcmd($this->count);
 
         // Exec string for Windows-based systems.
         if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
@@ -245,11 +264,11 @@ class Ping
         } // Exec string for Darwin based systems (OS X).
         else if (strtoupper(PHP_OS) === 'DARWIN') {
             // -n = numeric output; -c = number of pings; -m = ttl; -t = timeout.
-            $exec_string = 'ping -n -c 1 -m ' . $ttl . ' -t ' . $timeout . ' ' . $host;
+            $exec_string = 'ping -n -c ' . $count . ' -m ' . $ttl . ' -t ' . $timeout . ' ' . $host;
         } // Exec string for other UNIX-based systems (Linux).
         else {
             // -n = numeric output; -c = number of pings; -t = ttl; -W = timeout
-            $exec_string = 'ping -n -c 1 -t ' . $ttl . ' -W ' . $timeout . ' ' . $host . ' 2>&1';
+            $exec_string = 'ping -n -c ' . $count . ' -t ' . $ttl . ' -W ' . $timeout . ' ' . $host . ' 2>&1';
         }
 
         exec($exec_string, $output, $return);
@@ -278,22 +297,81 @@ class Ping
      * is often the fastest, but not necessarily the most reliable. Even if a host
      * doesn't respond, fsockopen may still make a connection.
      *
-     * @return float
-     *   Latency, in ms.
+     * @return array
+     *   Latencies, in ms.
      */
     private function pingFsockopen()
     {
-        $start = microtime(TRUE);
-        // fsockopen prints a bunch of errors if a host is unreachable. Hide those
-        // irrelevant errors and deal with the results instead.
-        $fp = @fsockopen($this->host, $this->port, $errno, $errstr, $this->timeout);
-        if (!$fp) {
-            $latency = FALSE;
-        } else {
-            $latency = microtime(TRUE) - $start;
-            $latency = round($latency * 1000, 4);
+      $fsockopen = [
+        'pings' => [],
+        'meta' => [
+          'attempts' => 0,
+          'fail' => 0,
+          'success' => 0
+        ],
+        'latency' => [
+          'min' => null,
+          'max' => null,
+          'avg' => 0
+        ]
+      ];
+      $count   = escapeshellcmd($this->count);
+      if ($count > 0) {
+        $i = 0;
+        $totalMs = 0;
+        while ($i < $count) {
+          $ms = $this->pingFsockopenExec();
+
+          ++$fsockopen['meta']['attempts'];
+          if (!$ms) {
+            ++$fsockopen['meta']['fail'];
+          } else {
+            ++$fsockopen['meta']['success'];
+            $totalMs += $ms;
+
+            if ($fsockopen['latency']['min'] == null) {
+              $fsockopen['latency']['min'] = $ms;
+            } else {
+              if ($ms < $fsockopen['latency']['min']) {
+                $fsockopen['latency']['min'] = $ms;
+              }
+            }
+
+            if ($fsockopen['latency']['max'] == null) {
+              $fsockopen['latency']['max'] = $ms;
+            } else {
+              if ($ms > $fsockopen['latency']['max']) {
+                $fsockopen['latency']['max'] = $ms;
+              }
+            }
+          }
+
+          $fsockopen['pings'][] = $ms;
+
+          ++$i;
         }
-        return $latency;
+
+        if ($fsockopen['meta']['success'] > 0) {
+          $fsockopen['latency']['avg'] = number_format(($totalMs / $fsockopen['meta']['success']), 2);
+        }
+      }
+
+      return $fsockopen;
+    }
+
+    private function pingFsockopenExec()
+    {
+      $start = microtime(TRUE);
+      // fsockopen prints a bunch of errors if a host is unreachable. Hide those
+      // irrelevant errors and deal with the results instead.
+      $fp = @fsockopen($this->host, $this->port, $errno, $errstr, $this->timeout);
+      if (!$fp) {
+        $latency = FALSE;
+      } else {
+        $latency = microtime(TRUE) - $start;
+        $latency = round($latency * 1000, 4);
+      }
+      return $latency;
     }
 
     /**
