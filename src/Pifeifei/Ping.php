@@ -282,19 +282,28 @@ class Ping
     if (!empty($output[1])) {
       // Search for a 'time' value in the result line.
       $response = preg_match_all("/time(?:=|<)(?<time>[\.0-9]+)(?:|\s)ms/", $this->commandOutput, $matches);
-      $summary = preg_match_all("/(?<attempts>[\.0-9]+)(?:|\s)packets transmitted, (?<received>[\.0-9]+)(?:|\s) received, (?<loss>[\.0-9]+)(?:|\s)% packet loss/", $this->commandOutput, $matcheSummary);
+      $summary = preg_match_all("/(?<attempts>[\.0-9]+)(?:|\s)packets transmitted, (?<received>[\.0-9]+)(?:|\s) received, (?<loss>[\.0-9]+)(?:|\s)% packet loss/", $this->commandOutput, $matchesSummary);
       // If there's a result and it's greater than 0, return the latency.
       if ($response > 0 && isset($matches['time'])) {
         $latency = round($matches['time'], 4);
       }
 
-      if ($summary > 0 && isset($matcheSummary['attempts'])) {
-        $latency = [
-          'attempts' => $matcheSummary['attempts'][0],
-          'received' => $matcheSummary['received'][0],
-          'loss' => $matcheSummary['loss'][0],
-          'avg' => (array_sum(array_values($matches['time'])) / count(array_values($matches['time'])))
-        ];
+      if ($summary > 0 && isset($matchesSummary['attempts'])) {
+        if (count($matches['time']) > 0) {
+          $latency = [
+            'attempts' => $matchesSummary['attempts'][0],
+            'received' => $matchesSummary['received'][0],
+            'loss' => $matchesSummary['loss'][0],
+            'avg' => (array_sum(array_values($matches['time'])) / count(array_values($matches['time'])))
+          ];
+        } else {
+          $latency = [
+            'attempts' => $matchesSummary['attempts'][0],
+            'received' => $matchesSummary['received'][0],
+            'loss' => $matchesSummary['loss'][0],
+            'avg' => 0
+          ];
+        }
       }
     }
 
